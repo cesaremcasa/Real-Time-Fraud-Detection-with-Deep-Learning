@@ -74,7 +74,7 @@ The system uses an Autoencoder neural network trained on normal transaction patt
 
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
-cd real-time-fraud-detection
+cd Real-Time-Fraud-Detection-with-Deep-Learning
 ```
 
 ### 2. Start the Infrastructure
