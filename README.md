@@ -73,7 +73,7 @@ The system uses an Autoencoder neural network trained on normal transaction patt
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/real-time-fraud-detection.git
+git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
 cd real-time-fraud-detection
 ```
 
@@ -92,7 +92,7 @@ This will spin up:
 ### 3. Access the Services
 
 - **API Documentation:** http://localhost:8000/docs
-- **Grafana Dashboard:** http://localhost:3000 (admin/admin)
+- **Grafana Dashboard:** http://localhost:3000 (credentials from GF_SECURITY_ADMIN_USER and GF_SECURITY_ADMIN_PASSWORD)
 - **Prometheus Metrics:** http://localhost:9090
 
 ### 4. Send Test Transactions
