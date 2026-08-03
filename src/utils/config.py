@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     API_DEBUG: bool = False
     
     # Kafka/Redpanda Config
-    KAFKA_BOOTSTRAP_SERVERS: str = "172.31.42.201:9092"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_TOPIC_TRANSACTIONS_RAW: str = "transactions_raw"
     KAFKA_TOPIC_FRAUD_PREDICTIONS: str = "fraud_predictions"
     KAFKA_ACKS: str = "1"  # "0": não espera, "1": leader, "all": todos replicas
