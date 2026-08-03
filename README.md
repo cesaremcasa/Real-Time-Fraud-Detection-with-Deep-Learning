@@ -1,168 +1,188 @@
 # Real-Time Fraud Detection with Deep Learning
 
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)
-![Docker](https://img.shields.io/badge/docker-compose-2496ed.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![CUDA](https://img.shields.io/badge/CUDA-enabled-76b900.svg)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Redpanda](https://img.shields.io/badge/Redpanda-Kafka%20API-E14E2A?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-3C9A5F?style=for-the-badge)
 
-## About
+**Unsupervised anomaly detection on a streaming pipeline.**
 
-Traditional fraud detection systems process transactions in batch mode, often taking hours to identify fraudulent activity. By the time fraud is detected, significant financial damage has already occurred.
+A FastAPI service accepts taxi trip records and publishes them to Redpanda. A separate worker consumes the stream, scores each record with a trained autoencoder on GPU when one is available, and exports Prometheus metrics.
 
-This project implements a real-time anomaly detection system for taxi transactions using streaming architecture and deep learning. The system ingests transaction data through a REST API, processes it via a Kafka streaming pipeline (Redpanda), and uses a PyTorch-based Autoencoder running on GPU to detect fraudulent patterns in milliseconds.
+The two processes never talk directly. The broker is the only contract between them, which is what lets the worker restart, fall behind, or run on different hardware without the ingestion path caring.
 
-**The Problem:** Batch processing systems create detection delays of hours, enabling fraudulent transactions to compound losses before intervention.
+---
 
-**The Solution:** A streaming-first architecture that combines FastAPI for ingestion, Redpanda for message brokering, and GPU-accelerated deep learning inference to detect anomalies with sub-10ms latency.
+## Why an autoencoder
 
-### How It Works
+Labeled fraud is scarce, and the fraud you have labels for is the fraud you already know about. This model is trained only on normal trips and learns to reconstruct them. A trip it reconstructs badly is a trip that does not look like anything it was trained on, which catches shapes nobody wrote a rule for.
 
-The system uses an Autoencoder neural network trained on normal transaction patterns. When a new transaction arrives:
+The decision threshold is not a guess. It is the 95th percentile of reconstruction error measured over a validation set, written to `artifacts/thresholds.json` at training time and loaded by the worker at startup.
 
-- **Normal transactions:** The model reconstructs the data with low reconstruction error
-- **Fraudulent transactions:** Abnormal patterns (impossible distances, suspicious pricing) produce high reconstruction error, triggering real-time alerts
-
-**Result:** Average detection latency of **2.5ms** per transaction (50x faster than the 100ms SLA requirement).
+---
 
 ## Architecture
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────────┐      ┌──────────────┐
-│   FastAPI   │─────>│   Redpanda   │─────>│  PyTorch Worker │─────>│   Grafana    │
-│  Producer   │      │   (Kafka)    │      │  (GPU Inference)│      │  Dashboard   │
-└─────────────┘      └──────────────┘      └─────────────────┘      └──────────────┘
-                                                    │
-                                                    v
-                                            ┌──────────────┐
-                                            │  Prometheus  │
-                                            │   Metrics    │
-                                            └──────────────┘
+POST /api/v1/transaction
+-> FastAPI producer, validates the payload and returns immediately
+-> Redpanda topic transactions_raw
+-> Worker, consumer group fraud-worker-group
+-> Feature engineering, StandardScaler, autoencoder forward pass
+-> Reconstruction error compared against the stored threshold
+-> Prometheus metrics, API on 8000 and worker on 8001
 ```
 
-### Technology Stack
+The API imports no ML code and loads no model. A slow or failing model cannot block ingestion.
 
-- **API Layer:** FastAPI (async request handling)
-- **Message Broker:** Redpanda (Kafka-compatible streaming)
-- **ML Framework:** PyTorch with CUDA acceleration
-- **Model Architecture:** Autoencoder (anomaly detection via reconstruction error)
-- **Monitoring:** Prometheus + Grafana
-- **Infrastructure:** Docker Compose, NVIDIA L4 GPU
-- **Dataset:** NYC Taxi Trip Records
+---
 
-## Performance Metrics
+## What is in this repository
 
-| Metric | Value | Target |
-|--------|-------|--------|
-| **Average Latency** | 2.5ms | <100ms |
-| **P95 Latency** | 8.7ms | <150ms |
-| **Throughput** | 5,000 txn/sec | 1,000 txn/sec |
-| **Model Precision** | 94.2% | >90% |
-| **False Positive Rate** | 3.1% | <5% |
+| Path | What it is |
+| --- | --- |
+| `src/api/main.py` | FastAPI service, Kafka producer, rate limiting, metrics middleware |
+| `src/api/models.py` | Request and response models with validators |
+| `src/worker/main.py` | Kafka consumer, autoencoder definition, inference loop |
+| `src/utils/config.py` | Settings, Kafka producer and consumer configuration |
+| `notebooks/01_prep.py` | Data preparation and feature engineering |
+| `scripts/train_autoencoder.py` | Trains the autoencoder and the Isolation Forest, writes the artifacts |
+| `scripts/check_environment.sh` | GPU and environment check |
+| `data/processed_sample.parquet` | Processed sample used for training and validation |
+| `artifacts/autoencoder.pt` | Trained checkpoint with weights, dimensions and scaler parameters |
+| `artifacts/scaler.pkl` | Fitted StandardScaler over the five online features |
+| `artifacts/iforest.pkl` | Trained Isolation Forest |
+| `artifacts/thresholds.json` | Decision threshold and the validation statistics behind it |
+| `infra/docker-compose.yml` | Redpanda, Prometheus, Grafana, API and worker |
+| `infra/prometheus.yml` | Scrape configuration |
+| `docker/api.dockerfile` | API image |
+| `docker/worker.dockerfile` | Worker image, CUDA base |
 
-## Prerequisites
+---
 
-- Docker 24.0+ and Docker Compose
-- NVIDIA GPU with CUDA support (recommended: L4 or equivalent)
-- Python 3.10+
-- 8GB+ available RAM
-- NVIDIA Container Toolkit (for GPU acceleration)
+## The model
 
-## Quick Start
+Autoencoder, five inputs down to a two dimensional latent space and back:
 
-### 1. Clone the Repository
+```
+5 -> 32 -> 16 -> 8 -> 2 -> 8 -> 16 -> 32 -> 5
+```
+
+Features computed per trip:
+
+- `passenger_count`
+- `trip_distance`
+- `fare_amount`
+- `trip_duration_min`, derived from the pickup and dropoff timestamps
+- `fare_per_minute`, derived from the two above
+
+
+Threshold, read straight from `artifacts/thresholds.json`:
+
+| Value | Number |
+| --- | --- |
+| Reconstruction error threshold | 0.0172 |
+| Mean error on validation | 0.0049 |
+| Standard deviation | 0.0464 |
+| Percentile used | 95 |
+| Validation samples | 10767 |
+
+An Isolation Forest is trained alongside the autoencoder and loaded by the worker. Its score is computed and logged, but it does not yet feed the decision, so the current anomaly flag comes from the autoencoder alone. Wiring the two into one ensemble score is the next step, and it is written here rather than implied by the diagram.
+
+---
+
+## API
+
+`GET /health` returns service status and whether the Kafka producer is connected.
+
+`POST /api/v1/transaction` accepts a trip and queues it for scoring.
+
+```json
+{
+  "pickup_datetime": "2026-01-15T14:30:00",
+  "dropoff_datetime": "2026-01-15T14:45:00",
+  "passenger_count": 2,
+  "trip_distance": 2.5,
+  "fare_amount": 12.50,
+  "payment_type": 1,
+  "vendor_id": 1
+}
+```
+
+```json
+{
+  "status": "accepted",
+  "transaction_id": "a3f2c1b8-...",
+  "message": "Transaction queued for processing"
+}
+```
+
+Validation happens at the edge. Dropoff must be after pickup, distance and fare carry bounds, and a fare of zero on a trip longer than 0.1 miles is rejected before anything reaches the broker. Rate limiting is 100 requests per minute, with `/health` exempt.
+
+Interactive documentation at `/docs`.
+
+---
+
+## Metrics
+
+Exposed by the API at `/metrics`:
+
+- `api_requests_total` by method, endpoint and status
+- `api_request_duration_seconds`
+- `api_active_requests`
+- `kafka_messages_sent_total`
+- `kafka_produce_errors_total`
+
+Exposed by the worker on port 8001:
+
+- `worker_messages_received_total`
+- `worker_messages_processed_total` by outcome
+- `worker_inference_latency_seconds`
+- `worker_anomalies_detected_total`
+- `worker_processing_errors_total` by error type
+
+---
+
+## Running it
+
+Docker with the NVIDIA container runtime if you want the worker on GPU. It falls back to CPU on its own.
 
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
-cd Real-Time-Fraud-Detection-with-Deep-Learning
+cd Real-Time-Fraud-Detection-with-Deep-Learning/infra
+docker compose up -d
 ```
 
-### 2. Start the Infrastructure
+The compose file lives in `infra/`, not at the repository root.
 
 ```bash
-docker-compose up -d
+curl http://localhost:8000/health
 ```
 
-This will spin up:
-- Redpanda (Kafka broker)
-- FastAPI producer service
-- PyTorch worker with GPU inference
-- Prometheus and Grafana monitoring stack
+Prometheus comes up on 9090 and Grafana on 3000. Set `GF_SECURITY_ADMIN_PASSWORD` in your environment before exposing either one beyond localhost.
 
-### 3. Access the Services
+---
 
-- **API Documentation:** http://localhost:8000/docs
-- **Grafana Dashboard:** http://localhost:3000 (credentials from GF_SECURITY_ADMIN_USER and GF_SECURITY_ADMIN_PASSWORD)
-- **Prometheus Metrics:** http://localhost:9090
+## What is not finished
 
-### 4. Send Test Transactions
+Stated plainly, because a README that oversells is worse than one that undersells.
 
-```bash
-curl -X POST http://localhost:8000/transaction \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trip_distance": 2.5,
-    "fare_amount": 12.50,
-    "duration_minutes": 15
-  }'
-```
+- The Isolation Forest is loaded and scored but does not affect the decision yet
+- There are no automated tests
+- No Grafana dashboards are provisioned, so Grafana starts empty
+- The GPU memory gauge is declared and never populated
+- There is no published benchmark, which is why no latency or throughput numbers appear anywhere in this file
 
-### 5. Monitor Results
-
-View real-time fraud detection metrics in Grafana at http://localhost:3000/d/fraud-detection
-
-## Project Structure
-
-```
-Real-Time-Fraud-Detection-with-Deep-Learning/
-├── src/
-│   ├── api/
-│   │   ├── main.py              # FastAPI producer
-│   │   └── models.py            # Pydantic schemas
-│   ├── ml/
-│   │   ├── autoencoder.py       # PyTorch model definition
-│   │   ├── inference.py         # GPU inference worker
-│   │   └── preprocessor.py      # Feature engineering
-│   └── config/
-│       └── settings.py          # Configuration management
-├── infra/
-│   ├── docker-compose.yml       # Infrastructure orchestration
-│   ├── prometheus.yml           # Metrics configuration
-│   └── grafana/
-│       └── dashboards/          # Pre-built dashboards
-├── artifacts/
-│   ├── model.pth               # Trained Autoencoder weights
-│   └── scaler.pkl              # Feature scaling parameters
-├── notebooks/
-│   └── training.ipynb          # Model training pipeline
-├── tests/
-│   ├── test_api.py
-│   └── test_inference.py
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
+- ---
 
 ## License
 
-MIT License
+MIT. See [LICENSE](LICENSE).
 
-Copyright (c) 2025 Cesar Augusto
+---
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+**Cesar Augusto** · AI Systems Engineer, Mycellium Lab
+[GitHub](https://github.com/cesaremcasa) · [LinkedIn](https://www.linkedin.com/in/cesar-augusto-22943a351/) · [korvo.dev](https://korvo.dev)
