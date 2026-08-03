@@ -13,7 +13,7 @@ PASSO A PASSO NO CONSOLE AWS:
 
 3. ENCONTRE SUA INSTÂNCIA:
    - No menu lateral, clique em "Instances"
-   - Localize sua instância (ip-172-31-42-201)
+   - Localize sua instância (a sua)
    - Anote o "Security Group" associado (nome no campo Security)
 
 4. CONFIGURE O SECURITY GROUP:
@@ -58,8 +58,8 @@ PASSO A PASSO NO CONSOLE AWS:
 
 7. TESTE O ACESSO:
    - No seu navegador, acesse:
-     http://54.145.187.17:3000  (Grafana)
-     http://54.145.187.17:9090  (Prometheus)
+     http://SEU_IP_PUBLICO:3000  (Grafana)
+     http://SEU_IP_PUBLICO:9090  (Prometheus)
 
 ===================================================
 IMPORTANTE SEGURANÇA:
