@@ -114,7 +114,7 @@ View real-time fraud detection metrics in Grafana at http://localhost:3000/d/fra
 ## Project Structure
 
 ```
-real-time-fraud-detection/
+Real-Time-Fraud-Detection-with-Deep-Learning/
 ├── src/
 │   ├── api/
 │   │   ├── main.py              # FastAPI producer
