@@ -1,0 +1,13 @@
+version: '3.8'
+
+# Local-only observability and API access. Do not use this file in production.
+services:
+  api-producer:
+    ports:
+      - "127.0.0.1:8000:8000"
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"
+  grafana:
+    ports:
+      - "127.0.0.1:3000:3000"

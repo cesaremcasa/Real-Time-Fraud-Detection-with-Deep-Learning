@@ -11,7 +11,6 @@ from typing import Dict, Any
 import structlog
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -21,7 +20,8 @@ from confluent_kafka import Producer, KafkaException
 
 # Importações locais
 from src.api.models import TransactionRequest, TransactionResponse, HealthResponse
-from src.utils.config import settings, get_kafka_producer_config
+from src.api.security import ProducerAuthenticationError, ProducerAuthenticator
+from src.utils.config import settings, get_kafka_producer_config, get_producer_secrets
 
 # ============================================================================
 # CONFIGURAÇÃO DE LOGGING
@@ -165,6 +165,7 @@ class KafkaProducerWrapper:
 
 # Instância global do produtor
 kafka_producer = KafkaProducerWrapper()
+producer_authenticator: ProducerAuthenticator | None = None
 
 # ============================================================================
 # CONFIGURAÇÃO DO FASTAPI
@@ -185,15 +186,6 @@ app = FastAPI(
 # Adicionar rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especificar origens
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Middleware de métricas e logging
 @app.middleware("http")
@@ -283,11 +275,30 @@ async def health_check(request: Request):
         version="1.0.0"
     )
 
+
+async def require_authenticated_producer(request: Request) -> str:
+    """Require a fresh, signed request before it enters the Kafka pipeline."""
+    if producer_authenticator is None:
+        raise HTTPException(status_code=503, detail="transaction producer authentication is not configured")
+    try:
+        return producer_authenticator.verify(
+            producer_id=request.headers.get("X-Producer-Id"),
+            timestamp=request.headers.get("X-Request-Timestamp"),
+            nonce=request.headers.get("X-Request-Nonce"),
+            signature=request.headers.get("X-Request-Signature"),
+            method=request.method,
+            path=request.url.path,
+            body=await request.body(),
+        )
+    except ProducerAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
 @app.post("/api/v1/transaction", response_model=TransactionResponse)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def create_transaction(
     request: Request,
-    transaction: TransactionRequest
+    transaction: TransactionRequest,
+    _producer_id: str = Depends(require_authenticated_producer),
 ):
     """
     Recebe uma transação de táxi e a envia para processamento.
@@ -376,7 +387,15 @@ async def create_transaction(
 async def startup_event():
     """Evento de inicialização da aplicação."""
     logger.info("Starting Fraud Detection API")
-    logger.info("Configuration", **settings.dict())
+    global producer_authenticator
+    producer_authenticator = ProducerAuthenticator(get_producer_secrets())
+    logger.info(
+        "Configuration",
+        api_host=settings.API_HOST,
+        api_port=settings.API_PORT,
+        kafka_bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        producer_count=len(get_producer_secrets()),
+    )
     
     # Testar conexão com Kafka
     try:

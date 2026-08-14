@@ -6,6 +6,7 @@ Usa Pydantic Settings para gerenciamento de variáveis de ambiente.
 from pydantic_settings import BaseSettings
 from typing import Optional, Dict, Any
 import os
+import json
 
 class Settings(BaseSettings):
     # API Config
@@ -23,6 +24,10 @@ class Settings(BaseSettings):
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
+
+    # External ingestion is authenticated with one HMAC secret per producer.
+    # This intentionally has no insecure default.
+    FRAUD_PRODUCER_SECRETS_JSON: str = ""
     
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -45,6 +50,17 @@ class Settings(BaseSettings):
 
 # Instância global de configurações
 settings = Settings()
+
+
+def get_producer_secrets() -> dict[str, str]:
+    """Return the configured producer-id -> HMAC-secret mapping."""
+    try:
+        parsed = json.loads(settings.FRAUD_PRODUCER_SECRETS_JSON)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("FRAUD_PRODUCER_SECRETS_JSON must be a JSON object") from exc
+    if not isinstance(parsed, dict) or not parsed or any(not isinstance(key, str) or not isinstance(value, str) or not value for key, value in parsed.items()):
+        raise RuntimeError("FRAUD_PRODUCER_SECRETS_JSON must contain at least one producer ID and secret")
+    return parsed
 
 # Helper para configurações do Kafka Producer
 def get_kafka_producer_config() -> dict:
