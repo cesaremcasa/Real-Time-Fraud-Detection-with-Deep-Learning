@@ -98,7 +98,17 @@ An Isolation Forest is trained alongside the autoencoder and loaded by the worke
 
 `GET /health` returns service status and whether the Kafka producer is connected.
 
-`POST /api/v1/transaction` accepts a trip and queues it for scoring.
+`POST /api/v1/transaction` accepts a trip and queues it for scoring. Every
+producer must authenticate with an HMAC secret configured through
+`FRAUD_PRODUCER_SECRETS_JSON`.
+
+The signed request includes these headers:
+
+- `X-Producer-Id`
+- `X-Request-Timestamp` (Unix seconds, within five minutes)
+- `X-Request-Nonce` (unique per request)
+- `X-Request-Signature` (hex HMAC-SHA256 of `METHOD`, path, producer ID,
+  timestamp, nonce, and the SHA-256 body hash, each separated by a newline)
 
 ```json
 {
@@ -153,6 +163,8 @@ Docker with the NVIDIA container runtime if you want the worker on GPU. It falls
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
 cd Real-Time-Fraud-Detection-with-Deep-Learning/infra
+export FRAUD_PRODUCER_SECRETS_JSON='{"local-producer":"replace-with-a-long-random-secret"}'
+export GF_SECURITY_ADMIN_PASSWORD='replace-with-a-long-random-secret'
 docker compose up -d
 ```
 
@@ -162,7 +174,10 @@ The compose file lives in `infra/`, not at the repository root.
 curl http://localhost:8000/health
 ```
 
-Prometheus comes up on 9090 and Grafana on 3000. Set `GF_SECURITY_ADMIN_PASSWORD` in your environment before exposing either one beyond localhost.
+The default stack keeps the broker, API, Prometheus and Grafana inside Docker.
+For a local-only operator console, use `docker compose -f docker-compose.yml -f
+docker-compose.local.yml up -d`; it binds ports only to `127.0.0.1`. Do not
+expose the broker or monitoring ports directly to the internet.
 
 ---
 
