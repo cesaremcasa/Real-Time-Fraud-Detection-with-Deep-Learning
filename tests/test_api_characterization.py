@@ -53,10 +53,8 @@ def test_producer_endpoint_accepts_signed_fixture_with_fake_broker(monkeypatch: 
     TestClient = _api_dependencies_or_skip()
     monkeypatch.setenv("FRAUD_PRODUCER_SECRETS_JSON", '{"fixture-producer":"fixture-secret"}')
 
-    import importlib
     import src.api.main as api
 
-    api = importlib.reload(api)
     fake = FakeKafkaProducer()
     monkeypatch.setattr(api.kafka_producer, "produce", fake.produce)
     monkeypatch.setattr(
@@ -106,10 +104,8 @@ def test_producer_endpoint_requires_all_hmac_headers(monkeypatch: pytest.MonkeyP
     TestClient = _api_dependencies_or_skip()
     monkeypatch.setenv("FRAUD_PRODUCER_SECRETS_JSON", '{"fixture-producer":"fixture-secret"}')
 
-    import importlib
     import src.api.main as api
 
-    api = importlib.reload(api)
     fake = FakeKafkaProducer()
     monkeypatch.setattr(api.kafka_producer, "produce", fake.produce)
     monkeypatch.setattr(

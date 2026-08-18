@@ -41,6 +41,9 @@ def test_compose_services_ports_volumes_and_environment_are_characterized():
     compose = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text(encoding="utf-8"))
     local = yaml.safe_load((ROOT / "infra/docker-compose.local.yml").read_text(encoding="utf-8"))
     assert set(compose["services"]) == {"redpanda", "prometheus", "grafana", "api-producer", "ml-worker"}
+    assert "@sha256:632ee5289856bd0d56612f8ab13266851834552ceb37511eea9f2401e3d4616f" in compose["services"]["redpanda"]["image"]
+    assert "@sha256:b1935d181b6dd8e9c827705e89438815337e1b10ae35605126f05f44e5c6940f" in compose["services"]["prometheus"]["image"]
+    assert "@sha256:8d938a1c52b018c60cb3583657e038054387aa18a74f09a865c99a522481f7ac" in compose["services"]["grafana"]["image"]
     assert compose["services"]["redpanda"]["command"][-1] == "--advertise-kafka-addr PLAINTEXT://redpanda:29092"
     assert "redpanda_data:/var/lib/redpanda/data" in compose["services"]["redpanda"]["volumes"]
     assert "grafana_data:/var/lib/grafana" in compose["services"]["grafana"]["volumes"]
@@ -54,9 +57,9 @@ def test_compose_services_ports_volumes_and_environment_are_characterized():
 def test_docker_entrypoints_and_current_known_mismatches_are_visible():
     api = (ROOT / "docker/api.dockerfile").read_text(encoding="utf-8")
     worker = (ROOT / "docker/worker.dockerfile").read_text(encoding="utf-8")
-    assert "FROM python:3.10-slim" in api
+    assert "FROM python:3.11.11-slim@sha256:a8e0a3090316aed0b11037aac613aef32fb1747dcc1dcb5c0f6c727a0113a07f" in api
     assert 'CMD ["uvicorn", "src.api.main:app"' in api
-    assert "FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime" in worker
+    assert "FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime@sha256:77f17f843507062875ce8be2a6f76aa6aa3df7f9ef1e31d9d7432f4b0f563dee" in worker
     # Characterization, not endorsement: this entrypoint currently names a
     # module absent from the repository and is a follow-up packaging finding.
     assert 'CMD ["python", "-m", "src.ml_worker"]' in worker

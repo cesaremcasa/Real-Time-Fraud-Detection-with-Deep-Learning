@@ -1,5 +1,6 @@
 # Dockerfile para API Producer
-FROM python:3.10-slim
+# Pinned linux/amd64 digest; update deliberately with a provenance entry.
+FROM python:3.11.11-slim@sha256:a8e0a3090316aed0b11037aac613aef32fb1747dcc1dcb5c0f6c727a0113a07f
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y     gcc     g++     && rm -rf /var/lib/apt/lists/*
