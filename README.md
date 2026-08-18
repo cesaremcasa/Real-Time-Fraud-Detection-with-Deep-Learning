@@ -161,6 +161,15 @@ Exposed by the worker on port 8001:
 
 Docker with the NVIDIA container runtime if you want the worker on GPU. It falls back to CPU on its own.
 
+For the reproducible PR1 baseline, use Python 3.11 and the committed lock:
+
+```bash
+uv sync --frozen --extra dev
+uv run pytest -q                 # characterization only; no broker E2E
+uv run python scripts/check_provenance.py
+uv run python scripts/secret_scan.py
+```
+
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
 cd Real-Time-Fraud-Detection-with-Deep-Learning/infra

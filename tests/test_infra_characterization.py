@@ -60,6 +60,4 @@ def test_docker_entrypoints_and_current_known_mismatches_are_visible():
     assert "FROM python:3.11.11-slim@sha256:a8e0a3090316aed0b11037aac613aef32fb1747dcc1dcb5c0f6c727a0113a07f" in api
     assert 'CMD ["uvicorn", "src.api.main:app"' in api
     assert "FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime@sha256:77f17f843507062875ce8be2a6f76aa6aa3df7f9ef1e31d9d7432f4b0f563dee" in worker
-    # Characterization, not endorsement: this entrypoint currently names a
-    # module absent from the repository and is a follow-up packaging finding.
-    assert 'CMD ["python", "-m", "src.ml_worker"]' in worker
+    assert 'CMD ["python", "-m", "src.worker.main"]' in worker

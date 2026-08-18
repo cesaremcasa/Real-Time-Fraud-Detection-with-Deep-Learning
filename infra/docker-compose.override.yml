@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Intentionally empty. Docker Compose automatically loads this file, so local
 # host access lives in docker-compose.local.yml and must be requested explicitly.
 services: {}

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Local-only observability and API access. Do not use this file in production.
 services:
   api-producer:

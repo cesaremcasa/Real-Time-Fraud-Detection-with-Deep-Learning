@@ -18,4 +18,4 @@ COPY data/ ./data/
 COPY artifacts/ ./artifacts/
 
 # Comando para iniciar o worker
-CMD ["python", "-m", "src.ml_worker"]
+CMD ["python", "-m", "src.worker.main"]
