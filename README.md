@@ -58,6 +58,7 @@ The API imports no ML code and loads no model. A slow or failing model cannot bl
 | `artifacts/thresholds.json` | Decision threshold and the validation statistics behind it |
 | `infra/docker-compose.yml` | Redpanda, Prometheus, Grafana, API and worker |
 | `infra/prometheus.yml` | Scrape configuration |
+| `docs/characterization-pr1.md` | PR1 contract characterization and known baseline gaps |
 | `docker/api.dockerfile` | API image |
 | `docker/worker.dockerfile` | Worker image, CUDA base |
 
@@ -160,6 +161,15 @@ Exposed by the worker on port 8001:
 
 Docker with the NVIDIA container runtime if you want the worker on GPU. It falls back to CPU on its own.
 
+For the reproducible PR1 baseline, use Python 3.11 and the committed lock:
+
+```bash
+uv sync --frozen --extra dev
+uv run pytest -q                 # characterization only; no broker E2E
+uv run python scripts/check_provenance.py
+uv run python scripts/secret_scan.py
+```
+
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
 cd Real-Time-Fraud-Detection-with-Deep-Learning/infra
@@ -186,7 +196,8 @@ expose the broker or monitoring ports directly to the internet.
 Stated plainly, because a README that oversells is worse than one that undersells.
 
 - The Isolation Forest is loaded and scored but does not affect the decision yet
-- There are no automated tests
+- PR1 has deterministic characterization tests with synthetic fixtures and fakes;
+  they do not claim a live Redpanda or end-to-end transaction test
 - No Grafana dashboards are provisioned, so Grafana starts empty
 - The GPU memory gauge is declared and never populated
 - There is no published benchmark, which is why no latency or throughput numbers appear anywhere in this file

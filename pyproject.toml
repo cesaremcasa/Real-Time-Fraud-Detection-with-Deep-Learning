@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools==75.8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "real-time-fraud-detection"
+version = "0.1.0"
+description = "A reproducible baseline for streaming taxi anomaly detection."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi==0.115.8",
+  "uvicorn[standard]==0.34.0",
+  "pydantic==2.10.6",
+  "pydantic-settings==2.8.1",
+  "slowapi==0.1.9",
+  "confluent-kafka==2.8.2",
+  "pandas==2.2.3",
+  "numpy==2.2.2",
+  "torch==2.6.0",
+  "torchaudio==2.6.0",
+  "torchvision==0.21.0",
+  "scikit-learn==1.6.1",
+  "prometheus-client==0.21.1",
+  "structlog==25.1.0",
+  "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit==1.8.3",
+  "httpx==0.28.1",
+  "mypy==1.15.0",
+  "pip-audit==2.7.3",
+  "pytest==8.3.5",
+  "pytest-cov==6.0.0",
+  "PyYAML==6.0.2",
+  "ruff==0.9.10",
+  "setuptools==75.8.0",
+]
+
+[tool.setuptools]
+packages = ["src", "src.api", "src.utils", "src.worker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+explicit_package_bases = true
+disable_error_code = ["arg-type", "dict-item"]
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_unused_ignores = false
+no_implicit_optional = false

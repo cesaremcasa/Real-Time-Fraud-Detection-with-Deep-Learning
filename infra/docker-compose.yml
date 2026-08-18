@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   # Message Broker
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.2.1
+    image: docker.redpanda.com/redpandadata/redpanda:v23.2.1@sha256:632ee5289856bd0d56612f8ab13266851834552ceb37511eea9f2401e3d4616f
     container_name: redpanda
     command:
       - redpanda start
@@ -21,7 +19,7 @@ services:
 
   # Monitoring: Prometheus
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.55.1@sha256:b1935d181b6dd8e9c827705e89438815337e1b10ae35605126f05f44e5c6940f
     container_name: prometheus
     volumes:
           - ./prometheus.yml:/etc/prometheus/prometheus.yml
@@ -33,7 +31,7 @@ services:
 
   # Monitoring: Grafana
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.4.0@sha256:8d938a1c52b018c60cb3583657e038054387aa18a74f09a865c99a522481f7ac
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?set this before starting the stack}

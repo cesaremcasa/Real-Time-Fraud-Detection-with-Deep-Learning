@@ -1,0 +1,14 @@
+{
+  "topic": "transactions_raw",
+  "key": "00000000-0000-4000-8000-000000000001",
+  "value": {
+    "transaction_id": "00000000-0000-4000-8000-000000000001",
+    "pickup_datetime": "2026-01-15T14:30:00",
+    "dropoff_datetime": "2026-01-15T14:45:00",
+    "passenger_count": 2,
+    "trip_distance": 2.5,
+    "fare_amount": 12.5,
+    "payment_type": 1,
+    "vendor_id": 1
+  }
+}
