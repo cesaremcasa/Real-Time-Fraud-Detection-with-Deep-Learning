@@ -28,9 +28,10 @@ flow.
 - The API decorator has no explicit `status_code`, so the signed fixture
   currently returns HTTP 200 even though the function docstring says “202
   Accepted”.
-- `docker/worker.dockerfile` currently invokes `src.ml_worker`, but the source
-  tree contains `src/worker/main.py`; PR1 records this rather than repairing
-  runtime behavior.
+- The baseline `docker/worker.dockerfile` invoked `src.ml_worker` while the
+  source tree contained `src/worker/main.py`; this PR corrects the entrypoint
+  to `python -m src.worker.main` and the characterization now locks that
+  fixed behavior.
 - Compose currently exports `REDPANDA_BROKERS` and `KAFKA_TOPIC` while the
   Python settings read `KAFKA_BOOTSTRAP_SERVERS` and
   `KAFKA_TOPIC_TRANSACTIONS_RAW`. This mismatch is intentionally characterized.
