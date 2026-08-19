@@ -554,15 +554,24 @@ class FraudDetectionWorker:
                         logger.debug("Reached end of partition", topic=msg.topic(), partition=msg.partition())
                     else:
                         logger.error("Kafka error", error=msg.error())
-                    continue
+                    self.running = False
+                    break
                 
                 # Processar mensagem
                 success = self.process_message(msg)
-                if success:
-                    self.consumer.commit(asynchronous=False)
-                    processed += 1
-                    if limit and processed >= limit:
-                        self.running = False
+                if not success:
+                    logger.error("Worker fail-stop after message processing failure")
+                    self.running = False
+                    break
+                try:
+                    self.consumer.commit(message=msg, asynchronous=False)
+                except Exception as exc:  # noqa: BLE001 - do not read ahead after commit uncertainty
+                    logger.error("Worker fail-stop after offset commit failure", error=str(exc))
+                    self.running = False
+                    break
+                processed += 1
+                if limit and processed >= limit:
+                    self.running = False
                 
             except KeyboardInterrupt:
                 logger.info("Keyboard interrupt received")

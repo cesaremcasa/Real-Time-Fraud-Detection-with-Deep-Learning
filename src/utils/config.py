@@ -91,6 +91,7 @@ def get_kafka_consumer_config(group_id: Optional[str] = None) -> dict:
         'group.id': group_id,
         'auto.offset.reset': 'earliest',
         'enable.auto.commit': False,
+        'enable.auto.offset.store': False,
         'auto.commit.interval.ms': 5000,
         'max.poll.interval.ms': 300000,
         'session.timeout.ms': 10000,

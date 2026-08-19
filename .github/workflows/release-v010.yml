@@ -44,7 +44,14 @@ jobs:
       - name: Generate locked SBOM and checksums
         run: |
           uv export --frozen --extra dev --no-emit-project --format requirements.txt --output-file "$RUNNER_TEMP/requirements.lock.txt"
-          uv run pip-audit -r "$RUNNER_TEMP/requirements.lock.txt" --no-deps --disable-pip --format cyclonedx-json --output dist/sbom.cdx.json || true
+          set +e
+          uv run pip-audit -r "$RUNNER_TEMP/requirements.lock.txt" --no-deps --disable-pip --format cyclonedx-json --output dist/sbom.cdx.json
+          audit_status=$?
+          set -e
+          test -s dist/sbom.cdx.json
+          if [ "$audit_status" -ne 0 ]; then
+            echo "::warning::pip-audit reported locked dependency advisories; SBOM was still generated"
+          fi
           sha256sum dist/* > dist/SHA256SUMS
 
       - name: Upload evidence assets only

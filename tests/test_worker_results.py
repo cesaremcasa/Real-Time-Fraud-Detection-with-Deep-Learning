@@ -55,7 +55,7 @@ class FakeMessage:
 class FakeConsumer:
     def __init__(self, messages):
         self.messages = list(messages)
-        self.commits: list[bool] = []
+        self.commits: list[tuple[object, bool]] = []
         self.closed = False
 
     def poll(self, _timeout):
@@ -63,8 +63,8 @@ class FakeConsumer:
             return self.messages.pop(0)
         raise KeyboardInterrupt
 
-    def commit(self, *, asynchronous):
-        self.commits.append(asynchronous)
+    def commit(self, *, message, asynchronous):
+        self.commits.append((message, asynchronous))
 
     def close(self):
         self.closed = True
@@ -119,17 +119,40 @@ def test_publish_error_returns_failure_and_run_does_not_commit(monkeypatch: pyte
     assert consumer.closed is True
 
 
+def test_failure_on_message_a_fail_stops_before_queued_message_b(monkeypatch: pytest.MonkeyPatch):
+    worker = _worker_module()
+    instance = worker.FraudDetectionWorker()
+    instance.producer = FakeResultProducer(mode="error")
+    message_a = FakeMessage(_payload())
+    message_b = FakeMessage({**_payload(), "transaction_id": "tx-b"})
+    consumer = FakeConsumer([message_a, message_b])
+    instance.consumer = consumer
+    processed: list[str] = []
+
+    def fail_a(raw, *_args):
+        processed.append(raw["transaction_id"])
+        return False, {"autoencoder_mse": 0.01}, 0.01
+
+    monkeypatch.setattr(worker, "predict", fail_a)
+    instance.run()
+    assert processed == ["tx-1"]
+    assert consumer.commits == []
+    assert consumer.messages == [message_b]
+
+
 def test_commit_happens_only_after_result_ack_and_max_messages_exits(monkeypatch: pytest.MonkeyPatch):
     worker = _worker_module()
     instance = worker.FraudDetectionWorker(max_messages=1)
     producer = FakeResultProducer(mode="ack")
     instance.producer = producer
-    consumer = FakeConsumer([FakeMessage(_payload())])
+    message = FakeMessage(_payload())
+    consumer = FakeConsumer([message])
     instance.consumer = consumer
     monkeypatch.setattr(worker, "predict", lambda *args: (False, {"autoencoder_mse": 0.01}, 0.01))
 
     instance.run()
-    assert consumer.commits == [False]
+    assert len(consumer.commits) == 1
+    assert consumer.commits[0] == (message, False)
     assert consumer.closed is True
 
 
@@ -151,4 +174,5 @@ def test_consumer_config_disables_auto_commit_and_max_messages_is_configured():
     from src.utils.config import get_kafka_consumer_config, settings
 
     assert get_kafka_consumer_config()["enable.auto.commit"] is False
+    assert get_kafka_consumer_config()["enable.auto.offset.store"] is False
     assert settings.WORKER_MAX_MESSAGES == 0
