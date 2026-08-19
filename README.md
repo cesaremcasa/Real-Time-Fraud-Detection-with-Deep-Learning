@@ -33,6 +33,7 @@ POST /api/v1/transaction
 -> Worker, consumer group fraud-worker-group
 -> Feature engineering, StandardScaler, autoencoder forward pass
 -> Reconstruction error compared against the stored threshold
+-> Acknowledged compact result on fraud_predictions
 -> Prometheus metrics, API on 8000 and worker on 8001
 ```
 
@@ -135,6 +136,12 @@ Validation happens at the edge. Dropoff must be after pickup, distance and fare 
 
 Interactive documentation at `/docs`.
 
+After broker delivery, the producer returns HTTP `202` with the same accepted
+payload. The worker publishes only this compact result to `fraud_predictions`:
+`transaction_id`, `request_id`, `is_anomaly`, `scores`,
+`inference_time_seconds`, and `processed_at`; raw transaction fields are not
+copied into the result topic.
+
 ---
 
 ## Metrics
@@ -154,6 +161,7 @@ Exposed by the worker on port 8001:
 - `worker_inference_latency_seconds`
 - `worker_anomalies_detected_total`
 - `worker_processing_errors_total` by error type
+- `worker_results_published_total` for broker-acknowledged result publishes
 
 ---
 
@@ -169,6 +177,12 @@ uv run pytest -q                 # characterization only; no broker E2E
 uv run python scripts/check_provenance.py
 uv run python scripts/secret_scan.py
 ```
+
+The real PR2 proof is opt-in and local-only: `uv run python
+scripts/e2e_redpanda.py`. It starts the pinned Redpanda image, API, and CPU
+worker, then cleans every process/container in a `finally` block. On ARM hosts
+the pinned Linux/amd64 Redpanda image may exit under emulation; the CI E2E job
+on Linux/amd64 is authoritative. This is not a cloud or production test.
 
 ```bash
 git clone https://github.com/cesaremcasa/Real-Time-Fraud-Detection-with-Deep-Learning.git
@@ -196,8 +210,10 @@ expose the broker or monitoring ports directly to the internet.
 Stated plainly, because a README that oversells is worse than one that undersells.
 
 - The Isolation Forest is loaded and scored but does not affect the decision yet
-- PR1 has deterministic characterization tests with synthetic fixtures and fakes;
-  they do not claim a live Redpanda or end-to-end transaction test
+- PR2 has a real Redpanda/API/worker E2E job; local ARM emulation may be unable
+  to run the pinned broker image
+- Dependency audit output still contains known advisories for the pinned model
+  and runtime stack; CI records them for a dependency-focused follow-up
 - No Grafana dashboards are provisioned, so Grafana starts empty
 - The GPU memory gauge is declared and never populated
 - There is no published benchmark, which is why no latency or throughput numbers appear anywhere in this file
