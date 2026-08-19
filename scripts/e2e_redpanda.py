@@ -30,7 +30,7 @@ RAW_TOPIC = "transactions_raw"
 RESULT_TOPIC = "fraud_predictions"
 API_URL = "http://127.0.0.1:18000"
 METRICS_URL = "http://127.0.0.1:18001/metrics"
-SECRET = "e2e-synthetic-secret"
+SIGNING_MATERIAL = hashlib.sha256(b"public PR2 E2E fixture signing material").hexdigest()
 PRODUCER_ID = "e2e-producer"
 
 
@@ -94,7 +94,7 @@ def _signed_body() -> tuple[bytes, str, str]:
     canonical = "\n".join(
         ("POST", "/api/v1/transaction", PRODUCER_ID, timestamp, nonce, hashlib.sha256(body).hexdigest())
     )
-    signature = hmac.new(SECRET.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    signature = hmac.new(SIGNING_MATERIAL.encode(), canonical.encode(), hashlib.sha256).hexdigest()
     return body, transaction_id, json.dumps(
         {
             "Content-Type": "application/json",
@@ -154,7 +154,7 @@ def run() -> None:
         env = os.environ.copy()
         env.update(
             {
-                "FRAUD_PRODUCER_SECRETS_JSON": json.dumps({PRODUCER_ID: SECRET}),
+                "FRAUD_PRODUCER_SECRETS_JSON": json.dumps({PRODUCER_ID: SIGNING_MATERIAL}),
                 "KAFKA_BOOTSTRAP_SERVERS": BROKERS,
                 "KAFKA_TOPIC_TRANSACTIONS_RAW": RAW_TOPIC,
                 "KAFKA_TOPIC_FRAUD_PREDICTIONS": RESULT_TOPIC,
