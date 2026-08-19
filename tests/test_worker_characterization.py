@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import FakeKafkaMessage, FakeScaler
+from tests.fakes import FakeKafkaMessage, FakeResultProducer, FakeScaler
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +74,7 @@ def test_worker_message_boundary_uses_fake_kafka_and_fake_model(monkeypatch: pyt
     payload = envelope["value"]
     instance = worker.FraudDetectionWorker()
     instance.scaler = FakeScaler()
+    instance.producer = FakeResultProducer()
     instance.iforest = None
     instance.thresholds = {"autoencoder_mse_threshold": 0.1}
     instance.model = object()

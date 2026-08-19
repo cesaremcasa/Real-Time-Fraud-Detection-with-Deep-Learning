@@ -33,3 +33,23 @@ class FakeScaler:
 
     def inverse_transform(self, values: Any) -> Any:
         return values
+
+
+class FakeResultProducer:
+    """Immediately acknowledge result messages without a broker."""
+
+    def __init__(self) -> None:
+        self.callback = None
+        self.messages: list[dict[str, Any]] = []
+
+    def produce(self, *, topic: str, value: str, key: str, callback) -> None:
+        self.messages.append({"topic": topic, "value": value, "key": key})
+        self.callback = callback
+
+    def poll(self, _timeout: float) -> None:
+        if self.callback is not None:
+            callback, self.callback = self.callback, None
+            callback(None, object())
+
+    def flush(self, _timeout: float) -> int:
+        return 0

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     WORKER_CONSUMER_GROUP: str = "fraud-worker-group"
     WORKER_POLL_TIMEOUT: float = 1.0
     WORKER_HEALTH_CHECK_INTERVAL: int = 30
+    WORKER_MAX_MESSAGES: int = 0  # 0 means run indefinitely.
     
     class Config:
         env_file = ".env"
@@ -89,7 +90,7 @@ def get_kafka_consumer_config(group_id: Optional[str] = None) -> dict:
         'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
         'group.id': group_id,
         'auto.offset.reset': 'earliest',
-        'enable.auto.commit': True,
+        'enable.auto.commit': False,
         'auto.commit.interval.ms': 5000,
         'max.poll.interval.ms': 300000,
         'session.timeout.ms': 10000,
@@ -103,4 +104,5 @@ def get_worker_config() -> Dict[str, Any]:
         'consumer_group': settings.WORKER_CONSUMER_GROUP,
         'poll_timeout': settings.WORKER_POLL_TIMEOUT,
         'health_check_interval': settings.WORKER_HEALTH_CHECK_INTERVAL,
+        'max_messages': settings.WORKER_MAX_MESSAGES,
     }
