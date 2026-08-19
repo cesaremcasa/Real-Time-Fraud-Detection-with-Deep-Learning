@@ -14,4 +14,4 @@ torchvision==0.21.0
 scikit-learn==1.6.1
 prometheus-client==0.21.1
 structlog==25.1.0
-python-dotenv==1.0.1
+python-dotenv==1.2.2
