@@ -1,0 +1,32 @@
+services:
+  redpanda-e2e:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.2.1@sha256:632ee5289856bd0d56612f8ab13266851834552ceb37511eea9f2401e3d4616f
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --overprovisioned
+      - --set
+      - redpanda.enable_transactions=true
+      - --set
+      - redpanda.enable_idempotence=true
+      - --set
+      - redpanda.default_topic_partitions=1
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:29092
+      - --advertise-kafka-addr
+      - PLAINTEXT://127.0.0.1:19092
+    ports:
+      - "127.0.0.1:19092:29092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info", "-X", "brokers=127.0.0.1:29092"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks:
+      - fraud-e2e
+
+networks:
+  fraud-e2e:
+    driver: bridge

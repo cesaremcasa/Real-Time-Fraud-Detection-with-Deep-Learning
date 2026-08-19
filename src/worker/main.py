@@ -8,7 +8,8 @@ import json
 import time
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+from threading import Event
 from typing import Dict, Any, Optional, Tuple
 import structlog
 
@@ -16,7 +17,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from confluent_kafka import Consumer, Producer, KafkaError, KafkaException
 import joblib
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
@@ -25,7 +26,7 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from src.utils.config import settings, get_kafka_consumer_config
+from src.utils.config import settings, get_kafka_consumer_config, get_kafka_producer_config
 
 # ============================================================================
 # CONFIGURAÇÃO DE LOGGING
@@ -85,6 +86,11 @@ PROCESSING_ERRORS = Counter(
     'worker_processing_errors_total',
     'Total processing errors',
     ['error_type']
+)
+
+RESULTS_PUBLISHED = Counter(
+    'worker_results_published_total',
+    'Total acknowledged fraud prediction results published',
 )
 
 # ============================================================================
@@ -350,13 +356,15 @@ def predict(
 # CONSUMER KAFKA
 # ============================================================================
 class FraudDetectionWorker:
-    def __init__(self):
+    def __init__(self, max_messages: int | None = None):
         self.running = True
         self.scaler = None
         self.iforest = None
         self.thresholds = None
         self.model = None
         self.device = None
+        self.producer = None
+        self.max_messages = settings.WORKER_MAX_MESSAGES if max_messages is None else max_messages
         
         # Configurar handlers de sinal
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -377,6 +385,7 @@ class FraudDetectionWorker:
         # 2. Configurar consumer Kafka
         consumer_config = get_kafka_consumer_config()
         self.consumer = Consumer(consumer_config)
+        self.producer = Producer(get_kafka_producer_config())
         
         # 3. Subscrever tópicos
         topics = [settings.KAFKA_TOPIC_TRANSACTIONS_RAW]
@@ -384,7 +393,7 @@ class FraudDetectionWorker:
         logger.info(f"Subscribed to topics: {topics}")
         
         # 4. Iniciar servidor de métricas
-        metrics_port = 8001
+        metrics_port = settings.WORKER_METRICS_PORT
         start_http_server(metrics_port)
         logger.info(f"Prometheus metrics server started on port {metrics_port}")
         
@@ -393,6 +402,58 @@ class FraudDetectionWorker:
         logger.info(f"   Topics: {topics}")
         logger.info(f"   Device: {self.device}")
         logger.info(f"   Autoencoder threshold: {self.thresholds['autoencoder_mse_threshold']:.6f}")
+
+    def publish_result(
+        self,
+        *,
+        transaction_id: str,
+        request_id: str,
+        is_anomaly: bool,
+        scores: Dict[str, Any],
+        inference_time: float,
+    ) -> bool:
+        """Publish a compact result and wait for its delivery callback."""
+        if self.producer is None:
+            PROCESSING_ERRORS.labels(error_type='result_producer').inc()
+            return False
+        payload = {
+            "transaction_id": transaction_id,
+            "request_id": request_id,
+            "is_anomaly": bool(is_anomaly),
+            "scores": scores,
+            "inference_time_seconds": float(inference_time),
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        done = Event()
+        delivery_error: list[object | None] = [None]
+
+        def callback(error, _message):
+            delivery_error[0] = error
+            done.set()
+
+        try:
+            self.producer.produce(
+                topic=settings.KAFKA_TOPIC_FRAUD_PREDICTIONS,
+                key=transaction_id,
+                value=json.dumps(payload, separators=(",", ":")),
+                callback=callback,
+            )
+            deadline = time.monotonic() + settings.KAFKA_PRODUCE_TIMEOUT_SECONDS
+            while not done.is_set() and time.monotonic() < deadline:
+                self.producer.poll(min(0.1, deadline - time.monotonic()))
+            if not done.is_set():
+                self.producer.flush(max(0.0, deadline - time.monotonic()))
+            if not done.is_set() or delivery_error[0] is not None:
+                PROCESSING_ERRORS.labels(error_type='result_delivery').inc()
+                return False
+        except BufferError:
+            PROCESSING_ERRORS.labels(error_type='result_buffer').inc()
+            return False
+        except KafkaException:
+            PROCESSING_ERRORS.labels(error_type='result_publish').inc()
+            return False
+        RESULTS_PUBLISHED.inc()
+        return True
     
     def process_message(self, message) -> bool:
         """Processa uma mensagem Kafka."""
@@ -418,6 +479,20 @@ class FraudDetectionWorker:
                 self.thresholds, 
                 self.device
             )
+
+            if "error" in scores:
+                PROCESSING_ERRORS.labels(error_type='inference').inc()
+                MESSAGES_PROCESSED.labels(status='error').inc()
+                return False
+            if not self.publish_result(
+                transaction_id=transaction_id,
+                request_id=request_id,
+                is_anomaly=is_anomaly,
+                scores=scores,
+                inference_time=inference_time,
+            ):
+                MESSAGES_PROCESSED.labels(status='error').inc()
+                return False
             
             # Log baseado no resultado
             if is_anomaly:
@@ -456,11 +531,12 @@ class FraudDetectionWorker:
             MESSAGES_PROCESSED.labels(status='error').inc()
             return False
     
-    def run(self):
+    def run(self, max_messages: int | None = None):
         """Loop principal de consumo Kafka."""
         logger.info("Starting Kafka consumer loop...")
-        
-        poll_timeout = 1.0  # segundos
+        poll_timeout = settings.WORKER_POLL_TIMEOUT
+        limit = self.max_messages if max_messages is None else max_messages
+        processed = 0
         
         while self.running:
             try:
@@ -478,13 +554,24 @@ class FraudDetectionWorker:
                         logger.debug("Reached end of partition", topic=msg.topic(), partition=msg.partition())
                     else:
                         logger.error("Kafka error", error=msg.error())
-                    continue
+                    self.running = False
+                    break
                 
                 # Processar mensagem
                 success = self.process_message(msg)
-                
-                # Commit manual do offset (se configurado)
-                # self.consumer.commit(asynchronous=False)
+                if not success:
+                    logger.error("Worker fail-stop after message processing failure")
+                    self.running = False
+                    break
+                try:
+                    self.consumer.commit(message=msg, asynchronous=False)
+                except Exception as exc:  # noqa: BLE001 - do not read ahead after commit uncertainty
+                    logger.error("Worker fail-stop after offset commit failure", error=str(exc))
+                    self.running = False
+                    break
+                processed += 1
+                if limit and processed >= limit:
+                    self.running = False
                 
             except KeyboardInterrupt:
                 logger.info("Keyboard interrupt received")
@@ -509,6 +596,14 @@ class FraudDetectionWorker:
                 logger.info("Kafka consumer closed")
         except Exception as e:
             logger.error("Error closing Kafka consumer", error=str(e))
+
+        try:
+            if self.producer is not None:
+                self.producer.flush(settings.KAFKA_PRODUCE_TIMEOUT_SECONDS)
+                self.producer = None
+                logger.info("Kafka result producer flushed")
+        except Exception as e:
+            logger.error("Error flushing result producer", error=str(e))
         
         # Limpar memória GPU
         if torch.cuda.is_available():
@@ -522,11 +617,21 @@ class FraudDetectionWorker:
 # ============================================================================
 def main():
     """Função principal."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Fraud detection worker")
+    parser.add_argument(
+        "--max-messages",
+        type=int,
+        default=None,
+        help="exit after this many acknowledged results (default: configured/unlimited)",
+    )
+    args = parser.parse_args()
     print("="*70)
     print("FRAUD DETECTION WORKER - BLOCO 4")
     print("="*70)
     
-    worker = FraudDetectionWorker()
+    worker = FraudDetectionWorker(max_messages=args.max_messages)
     
     try:
         worker.initialize()

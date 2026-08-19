@@ -5,6 +5,7 @@ Bloco 3: Ingestion Layer
 
 import uuid
 import time
+import threading
 from datetime import datetime
 from typing import Dict, Any
 
@@ -113,20 +114,29 @@ class KafkaProducerWrapper:
             self.logger.error("Kafka connection failed", error=str(e))
             raise
     
-    def produce(self, topic: str, value: str, key: str = None):
-        """Produz mensagem para o Kafka."""
+    def produce(self, topic: str, value: str, key: str = None, timeout_seconds: float | None = None):
+        """Produce and wait for a broker delivery callback before succeeding."""
+        timeout = settings.KAFKA_PRODUCE_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        if timeout <= 0:
+            KAFKA_PRODUCE_ERRORS.inc()
+            return False
+        delivery_done = threading.Event()
+        delivery_error: list[object | None] = [None]
+
+        def on_delivery(err, msg):
+            delivery_error[0] = err
+            try:
+                self._delivery_callback(err, msg)
+            finally:
+                delivery_done.set()
+
         try:
             self.producer.produce(
                 topic=topic,
                 value=value.encode('utf-8') if isinstance(value, str) else value,
                 key=key,
-                callback=self._delivery_callback
+                callback=on_delivery,
             )
-            # Poll para trigger callbacks e verificar erros
-            self.producer.poll(0)
-            KAFKA_MESSAGES_SENT.labels(topic=topic, status='success').inc()
-            return True
-            
         except BufferError as e:
             self.logger.warning("Kafka producer buffer full", error=str(e))
             KAFKA_PRODUCE_ERRORS.inc()
@@ -136,6 +146,35 @@ class KafkaProducerWrapper:
             KAFKA_PRODUCE_ERRORS.inc()
             self._connected = False
             return False
+
+        deadline = time.monotonic() + timeout
+        while not delivery_done.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                self.producer.poll(min(0.1, remaining))
+            except KafkaException as e:
+                self.logger.error("Kafka delivery poll error", error=str(e))
+                KAFKA_PRODUCE_ERRORS.inc()
+                self._connected = False
+                return False
+
+        if not delivery_done.is_set():
+            try:
+                self.producer.flush(max(0.0, deadline - time.monotonic()))
+            except KafkaException as e:
+                self.logger.error("Kafka delivery flush error", error=str(e))
+            if not delivery_done.is_set():
+                self.logger.warning("Kafka delivery acknowledgement timed out")
+                KAFKA_PRODUCE_ERRORS.inc()
+                return False
+
+        if delivery_error[0] is not None:
+            KAFKA_PRODUCE_ERRORS.inc()
+            return False
+        KAFKA_MESSAGES_SENT.labels(topic=topic, status='success').inc()
+        return True
     
     def _delivery_callback(self, err, msg):
         """Callback para entrega de mensagens Kafka."""
@@ -293,7 +332,7 @@ async def require_authenticated_producer(request: Request) -> str:
     except ProducerAuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-@app.post("/api/v1/transaction", response_model=TransactionResponse)
+@app.post("/api/v1/transaction", response_model=TransactionResponse, status_code=202)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def create_transaction(
     request: Request,
@@ -348,10 +387,7 @@ async def create_transaction(
                 request_id=request_id,
                 transaction_id=transaction.transaction_id
             )
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to queue transaction for processing"
-            )
+            raise HTTPException(status_code=503, detail="Transaction queue temporarily unavailable")
         
         logger.info(
             "Transaction queued successfully",

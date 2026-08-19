@@ -85,9 +85,8 @@ def test_producer_endpoint_accepts_signed_fixture_with_fake_broker(monkeypatch: 
         response = client.post("/api/v1/transaction", content=body, headers=headers)
         health = client.get("/health")
 
-    # Characterization: current decorator has no explicit status_code, so this
-    # is 200 despite the endpoint docstring describing 202 Accepted.
-    assert response.status_code == 200
+    # PR2: 202 is emitted only after the fake broker reports delivery ack.
+    assert response.status_code == 202
     result = response.json()
     assert result["status"] == "accepted"
     assert result["transaction_id"] == payload["transaction_id"]

@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_TOPIC_TRANSACTIONS_RAW: str = "transactions_raw"
     KAFKA_TOPIC_FRAUD_PREDICTIONS: str = "fraud_predictions"
-    KAFKA_ACKS: str = "1"  # "0": não espera, "1": leader, "all": todos replicas
+    KAFKA_ACKS: str = "all"  # PR2 acceptance requires all replicas to ack.
     KAFKA_MAX_IN_FLIGHT: int = 5
+    KAFKA_PRODUCE_TIMEOUT_SECONDS: float = 5.0
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
     WORKER_CONSUMER_GROUP: str = "fraud-worker-group"
     WORKER_POLL_TIMEOUT: float = 1.0
     WORKER_HEALTH_CHECK_INTERVAL: int = 30
+    WORKER_MAX_MESSAGES: int = 0  # 0 means run indefinitely.
     
     class Config:
         env_file = ".env"
@@ -67,7 +69,8 @@ def get_kafka_producer_config() -> dict:
     """Retorna configurações para o produtor Kafka."""
     return {
         'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
-        'acks': settings.KAFKA_ACKS,
+        # Never let an environment override weaken broker acknowledgement.
+        'acks': 'all',
         'max.in.flight.requests.per.connection': settings.KAFKA_MAX_IN_FLIGHT,
         'queue.buffering.max.messages': 100000,
         'queue.buffering.max.ms': 100,  # 100ms de buffer
@@ -87,7 +90,8 @@ def get_kafka_consumer_config(group_id: Optional[str] = None) -> dict:
         'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
         'group.id': group_id,
         'auto.offset.reset': 'earliest',
-        'enable.auto.commit': True,
+        'enable.auto.commit': False,
+        'enable.auto.offset.store': False,
         'auto.commit.interval.ms': 5000,
         'max.poll.interval.ms': 300000,
         'session.timeout.ms': 10000,
@@ -101,4 +105,5 @@ def get_worker_config() -> Dict[str, Any]:
         'consumer_group': settings.WORKER_CONSUMER_GROUP,
         'poll_timeout': settings.WORKER_POLL_TIMEOUT,
         'health_check_interval': settings.WORKER_HEALTH_CHECK_INTERVAL,
+        'max_messages': settings.WORKER_MAX_MESSAGES,
     }
