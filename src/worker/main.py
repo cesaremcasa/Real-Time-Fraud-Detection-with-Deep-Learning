@@ -393,7 +393,7 @@ class FraudDetectionWorker:
         logger.info(f"Subscribed to topics: {topics}")
         
         # 4. Iniciar servidor de métricas
-        metrics_port = 8001
+        metrics_port = settings.WORKER_METRICS_PORT
         start_http_server(metrics_port)
         logger.info(f"Prometheus metrics server started on port {metrics_port}")
         
