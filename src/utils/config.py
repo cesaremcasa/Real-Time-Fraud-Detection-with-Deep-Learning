@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_TOPIC_TRANSACTIONS_RAW: str = "transactions_raw"
     KAFKA_TOPIC_FRAUD_PREDICTIONS: str = "fraud_predictions"
-    KAFKA_ACKS: str = "1"  # "0": não espera, "1": leader, "all": todos replicas
+    KAFKA_ACKS: str = "all"  # PR2 acceptance requires all replicas to ack.
     KAFKA_MAX_IN_FLIGHT: int = 5
+    KAFKA_PRODUCE_TIMEOUT_SECONDS: float = 5.0
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
@@ -67,7 +68,8 @@ def get_kafka_producer_config() -> dict:
     """Retorna configurações para o produtor Kafka."""
     return {
         'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS,
-        'acks': settings.KAFKA_ACKS,
+        # Never let an environment override weaken broker acknowledgement.
+        'acks': 'all',
         'max.in.flight.requests.per.connection': settings.KAFKA_MAX_IN_FLIGHT,
         'queue.buffering.max.messages': 100000,
         'queue.buffering.max.ms': 100,  # 100ms de buffer
